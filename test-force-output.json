@@ -1,0 +1,5 @@
+{
+  "latex": "\\documentclass{article}\n\\usepackage{array}\n\\begin{document}\n\\begin{tabular}{|L|c|r|}\n\\hline\nHello & World & Test\\\\\n\\hline\n\\end{tabular}\n\\end{document}",
+  "filename": "test-with-errors",
+  "forceOutput": true
+}

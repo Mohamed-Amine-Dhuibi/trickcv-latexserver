@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaTeX Compiler Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #005a8a;
+        }
+        .error {
+            color: red;
+            background-color: #ffe6e6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background-color: #e6ffe6;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>LaTeX Compiler Server Test Client</h1>
+    
+    <div class="container">
+        <h2>Method 1: Upload LaTeX File</h2>
+        <input type="file" id="fileInput" accept=".tex" />
+        <br>
+        <label>Engine: 
+            <select id="fileEngine">
+                <option value="">Auto (fastest available)</option>
+                <option value="tectonic">Tectonic (fastest - Rust-based)</option>
+                <option value="lualatex">LuaLaTeX (fast)</option>
+                <option value="xelatex">XeLaTeX (fast)</option>
+                <option value="pdflatex">PDFLaTeX (standard)</option>
+            </select>
+        </label>
+        <br>
+        <button onclick="uploadFile()">Compile and Download PDF</button>
+        <div id="fileResult"></div>
+    </div>
+
+    <div class="container">
+        <h2>Method 2: Submit LaTeX Text</h2>
+        <textarea id="latexText" placeholder="Enter your LaTeX code here...">
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+
+\title{Test Document}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This is a test document created from the web interface.
+
+\begin{equation}
+f(x) = \int_{-\infty}^{x} e^{-t^2} dt
+\end{equation}
+
+\section{Conclusion}
+LaTeX compilation successful!
+
+\end{document}
+        </textarea>
+        <br>
+        <input type="text" id="filename" placeholder="Filename (without .pdf)" value="document" />
+        <br>
+        <label>Engine: 
+            <select id="textEngine">
+                <option value="">Auto (fastest available)</option>
+                <option value="tectonic">Tectonic (fastest - Rust-based)</option>
+                <option value="lualatex">LuaLaTeX (fast)</option>
+                <option value="xelatex">XeLaTeX (fast)</option>
+                <option value="pdflatex">PDFLaTeX (standard)</option>
+            </select>
+        </label>
+        <br>
+        <button onclick="compileText()">Compile and Download PDF</button>
+        <div id="textResult"></div>
+    </div>
+
+    <div class="container">
+        <h2>Server Status</h2>
+        <button onclick="checkStatus()">Check Server Status</button>
+        <div id="statusResult"></div>
+    </div>
+
+    <script>
+        const serverUrl = 'http://localhost:3000';
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const engineSelect = document.getElementById('fileEngine');
+            const resultDiv = document.getElementById('fileResult');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="error">Please select a file</div>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('latex', fileInput.files[0]);
+            if (engineSelect.value) {
+                formData.append('engine', engineSelect.value);
+            }
+
+            try {
+                resultDiv.innerHTML = 'Compiling...';
+                const startTime = Date.now();
+                
+                const response = await fetch(`${serverUrl}/compile`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const endTime = Date.now();
+                const clientTime = endTime - startTime;
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileInput.files[0].name.replace('.tex', '.pdf');
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    const compilationTime = response.headers.get('X-Compilation-Time');
+                    const engineUsed = response.headers.get('X-Engine-Used');
+                    
+                    resultDiv.innerHTML = `<div class="success">
+                        ✅ PDF compiled and downloaded successfully!<br>
+                        🚀 Engine: ${engineUsed || 'unknown'}<br>
+                        ⏱️ Compilation time: ${compilationTime ? compilationTime + 'ms' : 'unknown'}<br>
+                        🌐 Total time: ${clientTime}ms
+                    </div>`;
+                } else {
+                    const errorData = await response.json();
+                    resultDiv.innerHTML = `<div class="error">
+                        ❌ Error: ${errorData.error}<br>
+                        Details: ${errorData.details || ''}<br>
+                        ${errorData.suggestion ? 'Suggestion: ' + errorData.suggestion : ''}
+                    </div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+            }
+        }
+
+        async function compileText() {
+            const latexText = document.getElementById('latexText').value;
+            const filename = document.getElementById('filename').value || 'document';
+            const engineSelect = document.getElementById('textEngine');
+            const resultDiv = document.getElementById('textResult');
+
+            if (!latexText.trim()) {
+                resultDiv.innerHTML = '<div class="error">Please enter LaTeX code</div>';
+                return;
+            }
+
+            const requestBody = {
+                latex: latexText,
+                filename: filename
+            };
+            
+            if (engineSelect.value) {
+                requestBody.engine = engineSelect.value;
+            }
+
+            try {
+                resultDiv.innerHTML = 'Compiling...';
+                const startTime = Date.now();
+                
+                const response = await fetch(`${serverUrl}/compile-text`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const endTime = Date.now();
+                const clientTime = endTime - startTime;
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${filename}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    const compilationTime = response.headers.get('X-Compilation-Time');
+                    const engineUsed = response.headers.get('X-Engine-Used');
+                    
+                    resultDiv.innerHTML = `<div class="success">
+                        ✅ PDF compiled and downloaded successfully!<br>
+                        🚀 Engine: ${engineUsed || 'unknown'}<br>
+                        ⏱️ Compilation time: ${compilationTime ? compilationTime + 'ms' : 'unknown'}<br>
+                        🌐 Total time: ${clientTime}ms
+                    </div>`;
+                } else {
+                    const errorData = await response.json();
+                    resultDiv.innerHTML = `<div class="error">
+                        ❌ Error: ${errorData.error}<br>
+                        Details: ${errorData.details || ''}<br>
+                        ${errorData.suggestion ? 'Suggestion: ' + errorData.suggestion : ''}
+                    </div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+            }
+        }
+
+        async function checkStatus() {
+            const resultDiv = document.getElementById('statusResult');
+            
+            try {
+                resultDiv.innerHTML = 'Checking...';
+                
+                const response = await fetch(`${serverUrl}/`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `<div class="success">
+                        <strong>Server Status:</strong> ${data.message}<br>
+                        <strong>Version:</strong> ${data.version}<br>
+                        <strong>LaTeX Installed:</strong> ${data.latexInstalled ? '✅ Yes' : '❌ No'}<br>
+                        ${data.availableEngines ? `<strong>Available Engines:</strong> ${data.availableEngines.join(', ')}<br>` : ''}
+                        ${data.recommendedEngine ? `<strong>Recommended Engine:</strong> ${data.recommendedEngine} (fastest)<br>` : ''}
+                        <strong>Available Endpoints:</strong>
+                        <ul>
+                            ${Object.entries(data.endpoints).map(([endpoint, desc]) => 
+                                `<li><code>${endpoint}</code>: ${desc}</li>`
+                            ).join('')}
+                        </ul>
+                        ${data.engineSpeeds ? `
+                        <strong>Engine Performance:</strong>
+                        <ul>
+                            ${Object.entries(data.engineSpeeds).map(([engine, desc]) => 
+                                `<li><strong>${engine}:</strong> ${desc}</li>`
+                            ).join('')}
+                        </ul>` : ''}
+                    </div>`;
+                } else {
+                    resultDiv.innerHTML = '<div class="error">Server is not responding</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Cannot connect to server: ${error.message}</div>`;
+            }
+        }
+
+        // Check server status on page load
+        window.onload = function() {
+            checkStatus();
+        };
+    </script>
+</body>
+</html>
