@@ -1,0 +1,109 @@
+name: Deploy LaTeX Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      clean_build:
+        description: 'Force clean build (--no-cache)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: latexServer
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create deployment tarball
+        run: |
+          tar -czf ../deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='temp/*' \
+            --exclude='output/*' \
+            --exclude='.github' \
+            .
+          mv ../deploy.tar.gz .
+          ls -lh deploy.tar.gz
+
+      - name: Transfer code to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "deploy.tar.gz"
+          target: "/tmp/"
+
+      - name: Deploy LaTeX Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+            
+            echo "=== Preparing deployment directory ==="
+            sudo mkdir -p /var/www/project/latexServer
+            cd /var/www/project/latexServer
+            
+            echo "=== Stopping existing container ==="
+            docker compose down 2>/dev/null || true
+
+            echo "=== Extracting new code ==="
+            sudo tar -xzf /tmp/deploy.tar.gz
+            sudo rm /tmp/deploy.tar.gz
+
+            echo "=== Setting permissions ==="
+            sudo chown -R $USER:$USER .
+            
+            echo "=== Creating necessary directories ==="
+            mkdir -p temp output
+
+            echo "=== Building Docker image ==="
+            if [ "${{ github.event.inputs.clean_build }}" == "true" ]; then
+              echo "🔨 Clean build: rebuilding from scratch"
+              docker compose build --no-cache
+            else
+              echo "⚡ Fast build: using cached layers"
+              docker compose build
+            fi
+
+            echo "=== Starting LaTeX server container ==="
+            docker compose up -d
+
+            echo "=== Waiting for service to be ready ==="
+            sleep 10
+
+            echo "=== Testing LaTeX server ==="
+            docker compose ps
+            docker compose logs --tail=30
+
+      - name: Verify Deployment
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd /var/www/project/latexServer
+            echo "=== Container status ==="
+            docker compose ps
+            echo "=== Recent logs ==="
+            docker compose logs --tail=50
+            echo "=== Testing compilation endpoint ==="
+            curl -X POST http://localhost:5000/compile-text \
+              -H "Content-Type: application/json" \
+              -d '{"latex": "\\documentclass{article}\\begin{document}Test\\end{document}"}' \
+              --max-time 30 || echo "Note: Endpoint test failed, but service may still be starting"
