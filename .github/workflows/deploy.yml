@@ -15,7 +15,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: latexServer
 
     steps:
       - name: Checkout code
