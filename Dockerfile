@@ -22,7 +22,7 @@ COPY . .
 RUN mkdir -p temp output
 
 # Expose port
-EXPOSE 3000
+EXPOSE 5000
 
 # Start the application
 CMD ["npm", "start"]
